@@ -1,0 +1,5 @@
+mediapipe
+ultralytics
+easyocr
+opencv-python
+numpy
