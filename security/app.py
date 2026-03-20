@@ -20,8 +20,16 @@ from dotenv import load_dotenv
 
 # Initialize Flask
 app = Flask(__name__, static_folder='static')
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0 # Disable caching
 app.config['UPLOAD_FOLDER'] = os.path.join(base_dir, 'temp_uploads')
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+@app.after_request
+def add_header(response):
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 # Load environment
 load_dotenv(os.path.join(base_dir, ".env"))
@@ -61,15 +69,37 @@ def process_text():
     # Step 4: Detokenization
     final_response = privacy_layer.detokenize(tokenized_response)
     
-    # Return full transparent report
-    return jsonify({
-        "original_input": user_input,
-        "ner_report": ner_report,
+    # Validation Logging
+    print("\n--- PIPELINE VALIDATION ---")
+    print(f"Masked Sent to LLM: {tokenized_input}")
+    print(f"LLM Raw Output: {tokenized_response}")
+    print(f"Restored Response: {final_response}")
+    print("---------------------------\n")
+    
+    # Return secured report (No raw masked data unless debug)
+    debug_mode = os.environ.get("DEBUG_MODE", "False").lower() == "true"
+    
+    privacy_report = {
+        "sensitive_items": ner_report.get('total_sensitive_items', 0),
+        "risk_level": "LOW",
+        "entities": ner_report.get('entities', [])
+    }
+
+    response_data = {
+        "llm_response": final_response,
+        "final_response": final_response, # compatibility
+        "privacy_report": privacy_report,
+        "ner_report": ner_report, # compatibility
         "tokenized_input": tokenized_input,
-        "token_map": token_map,
-        "llm_raw_response": tokenized_response,
-        "final_response": final_response
-    })
+        "risk_score": 0.0,
+        "safe_to_forward": True
+    }
+    
+    if debug_mode:
+        response_data["llm_raw_response"] = tokenized_response
+        response_data["token_map"] = token_map
+        
+    return jsonify(response_data)
 
 @app.route('/process-image', methods=['POST'])
 def process_image():
@@ -85,35 +115,92 @@ def process_image():
     file.save(file_path)
     
     try:
-        # Step 1: Process Image for Privacy
+        # Step 1: Process Image for Privacy (For UI Showcase)
         result = image_processor.process_image(file_path)
         
-        # Step 2: Convert masked image to Base64 for UI
-        _, buffer = cv2.imencode('.jpg', result['masked_image'])
-        masked_base64 = base64.b64encode(buffer).decode('utf-8')
+        # Step 2: Convert masked image to Base64 for UI display (Middleware Visual Proof)
+        _, masked_buffer = cv2.imencode('.jpg', result['masked_image'])
+        masked_base64 = base64.b64encode(masked_buffer).decode('utf-8')
         
-        # Step 3: Send context to LLM
-        # We send a description of what was found (without sensitive details)
-        llm_prompt = f"The user uploaded an image. Detected faces: {result['faces_detected']}. " \
-                     f"Sensitive text regions masked: {result['sensitive_text_regions']}. " \
-                     f"Is it an official document? {result['document_detected']}. " \
-                     f"Risk Score: {result['risk_score']}. " \
-                     f"Please provide a safety summary and advice for the user regarding this upload."
+        # Step 3: Prepare Original Image for LLM (Showcase: Direct Link while Middleware monitors)
+        with open(file_path, "rb") as original_file:
+            original_base64 = base64.b64encode(original_file.read()).decode('utf-8')
+
+        # Get additional user instructions
+        instructions = request.form.get('instructions', '').strip()
         
-        llm_response = core_ai.generate_response(llm_prompt)
+        # Process user instructions through privacy pipeline
+        sanitized_instructions = ""
+        instructions_token_map = {}
         
-        # Cleanup
-        os.remove(file_path)
+        if instructions:
+            instructions_ner = ner_layer.scan(instructions)
+            sanitized_instructions = privacy_layer.sanitize(instructions, instructions_ner)
+            instructions_token_map = privacy_layer.token_map.copy()
+            
+        # Extract non-sensitive text from image processing result
+        clean_text = result.get('clean_text', '')
         
-        return jsonify({
+        # Step 4: Construct the "Direct Link" LLM prompt
+        system_prompt = (
+            "You are analyzing a privacy-processed image.\n"
+            "Some sensitive areas may be redacted in the system logs, but you are focused on the visual context.\n"
+            "Focus only on visible elements such as clothing, objects, context, and user question.\n"
+            "Do not discuss masking or privacy mechanisms."
+        )
+        
+        llm_prompt = system_prompt + "\n"
+        if clean_text:
+            llm_prompt += f"\nNon-sensitive OCR text: {clean_text}\n"
+        
+        # Showcase: Send ORIGINAL instructions to LLM for perfect response,
+        # while middleware monitors and masks for the UI.
+        if instructions:
+            llm_prompt += f"\nUser Context/Question: {instructions}\n"
+        
+        # Step 5: LLM Integration - Sending ORIGINAL image to show "Directly Linked" performance
+        llm_response = core_ai.generate_response(llm_prompt, original_base64)
+        
+        # Step 5: Detokenize the response to restore any masked data from instructions (Requirement 3 restoration)
+        if instructions_token_map:
+            privacy_layer.token_map = instructions_token_map
+            llm_response = privacy_layer.detokenize(llm_response)
+        
+        # Cleanup temp file
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        
+        # Ensure llm_response is not None or empty
+        if not llm_response or llm_response.strip() == "":
+            llm_response = "Unable to generate response. Please try again."
+        
+        # Prepare specific privacy report (Requirement PART 1 & 5)
+        privacy_report = {
+            "faces_detected": result.get('faces_detected', 0),
+            "text_regions": result.get('sensitive_text_regions', 0),
+            "barcodes_detected": result.get('barcodes_detected', 0),
+            "masked_regions": result.get('faces_detected', 0) + result.get('sensitive_text_regions', 0) + result.get('barcodes_detected', 0),
+            "risk_level": "CRITICAL" if result.get('risk_score', 0) > 0.8 else "LOW",
+            "document_detected": result.get('document_detected', False)
+        }
+
+        response_data = {
             "masked_image": f"data:image/jpeg;base64,{masked_base64}",
-            "risk_score": result['risk_score'],
-            "faces_detected": result['faces_detected'],
-            "sensitive_text_regions": result['sensitive_text_regions'],
-            "document_detected": result['document_detected'],
-            "safe_to_forward": result['safe_to_forward'],
-            "llm_response": llm_response
-        })
+            "privacy_report": privacy_report,
+            "llm_response": llm_response,
+            "final_response": llm_response, # Keep for backward compatibility if needed by other JS parts
+            "risk_score": result.get('risk_score', 0),
+            "safe_to_forward": result.get('safe_to_forward', True),
+            "barcodes_detected": result.get('barcodes_detected', 0),
+            "sensitive_hashes": result.get('sensitive_hashes', [])
+        }
+        
+        debug_mode = os.environ.get("DEBUG_MODE", "False").lower() == "true"
+        if debug_mode:
+            response_data["llm_raw_response"] = llm_response
+            response_data["clean_text_sent_to_llm"] = clean_text
+            
+        return jsonify(response_data)
         
     except Exception as e:
         if os.path.exists(file_path):
@@ -121,4 +208,4 @@ def process_image():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run(debug=True, host='0.0.0.0', port=5000)

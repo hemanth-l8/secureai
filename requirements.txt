@@ -3,3 +3,7 @@ ultralytics
 easyocr
 opencv-python
 numpy
+flask
+python-dotenv
+spacy
+requests

@@ -159,6 +159,10 @@ def call_llm_api(sanitized_text):
         provider = "Groq"
         api_url = "https://api.groq.com/openai/v1/chat/completions"
         model = "llama-3.3-70b-versatile" # Updated valid model
+    elif api_key.startswith("sk-or-"):
+        provider = "OpenRouter"
+        api_url = "https://openrouter.ai/api/v1/chat/completions"
+        model = "stepfun/step-3.5-flash:free"
     else:
         provider = "OpenAI"
         api_url = "https://api.openai.com/v1/chat/completions"

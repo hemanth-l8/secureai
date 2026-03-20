@@ -22,6 +22,12 @@
             </div>
             <h1>Secure AI Middleware Dashboard</h1>
             <p class="subtitle">Enterprise Data Privacy Firewall & LLM Transparency Layer</p>
+
+            <!-- NEW: Privacy Status HUD -->
+            <div id="statusHUD" class="status-hud">
+                <div class="status-dot"></div>
+                <span id="statusText">SYSTEM STATUS: SAFE</span>
+            </div>
         </div>
     </header>
 
@@ -49,7 +55,8 @@
                         </div>
 
                         <div id="textInputGroup">
-                            <textarea id="userInput" placeholder="Enter sensitive text to test the firewall..."></textarea>
+                            <textarea id="userInput"
+                                placeholder="Enter sensitive text to test the firewall..."></textarea>
                             <button id="submitBtn" class="primary-btn">
                                 <span class="btn-text">Process Securely</span>
                                 <div class="spinner hidden"></div>
@@ -58,7 +65,8 @@
 
                         <div id="imageInputGroup" class="hidden">
                             <div class="upload-zone" id="dropZone">
-                                <svg viewBox="0 0 24 24" width="48" height="48" stroke="currentColor" stroke-width="1.5" fill="none">
+                                <svg viewBox="0 0 24 24" width="48" height="48" stroke="currentColor" stroke-width="1.5"
+                                    fill="none">
                                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                                     <polyline points="17 8 12 3 7 8"></polyline>
                                     <line x1="12" y1="3" x2="12" y2="15"></line>
@@ -69,6 +77,11 @@
                             <div id="imagePreview" class="hidden">
                                 <img id="selectedImg" src="" alt="Selected Image">
                             </div>
+
+                            <!-- NEW: Additional Instructions for Image -->
+                            <textarea id="imageInstructions" class="instructions-area"
+                                placeholder="What should I do with this image? (optional)..."></textarea>
+
                             <button id="submitImgBtn" class="primary-btn">
                                 <span class="btn-text">Detect & Mask Privacy</span>
                                 <div class="spinner hidden"></div>
@@ -89,14 +102,42 @@
                         <div class="icon-circle ic-yellow">
                             <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2"
                                 fill="none">
-                                <circle cx="11" cy="11" r="8"></circle>
-                                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
                             </svg>
                         </div>
-                        <h2>Detection Layer</h2>
+                        <h2>Privacy Inspection</h2>
                     </div>
                     <div class="card-body">
-                        <div class="entity-grid" id="nerResults"></div>
+                        <!-- NEW: Privacy Scan Status -->
+                        <div id="privacyScanStatus" class="privacy-scan-status hidden">
+                            <div class="shield-pulse">
+                                <svg viewBox="0 0 24 24" width="32" height="32" stroke="currentColor" stroke-width="2"
+                                    fill="none">
+                                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                                </svg>
+                            </div>
+                            <p>Scanning for sensitive entities...</p>
+                        </div>
+
+                        <div id="privacyReportCard" class="report-card hidden">
+                            <div class="report-header" id="reportToggle">
+                                <div class="report-title">
+                                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor"
+                                        stroke-width="2" fill="none">
+                                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                                        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                                    </svg>
+                                    <span id="reportCount">0 Sensitive items protected</span>
+                                </div>
+                                <svg class="chevron" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor"
+                                    stroke-width="2" fill="none">
+                                    <polyline points="6 9 12 15 18 9"></polyline>
+                                </svg>
+                            </div>
+                            <div id="reportDetails" class="report-details hidden">
+                                <div class="entity-grid" id="nerResults"></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -139,11 +180,14 @@
                                 <path d="M12 2a10 10 0 0 1 10 10h-2a8 8 0 0 0-8-8V2z"></path>
                             </svg>
                         </div>
-                        <h2>LLM Processing (Raw Output)</h2>
+                        <h2>LLM Reasoning (Privacy Verified)</h2>
                     </div>
                     <div class="card-body">
-                        <div class="code-box orange-box">
-                            <span id="llmRawOutput"></span><span class="cursor">|</span>
+                        <p class="outcome-desc">Analyzing sanitized request through secure gateway...</p>
+                        <div id="debugOutputSection" class="hidden">
+                            <div class="code-box orange-box">
+                                <span id="llmRawOutput"></span><span class="cursor">|</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -160,21 +204,124 @@
                                 <polyline points="20 6 9 17 4 12"></polyline>
                             </svg>
                         </div>
-                        <h2>De-tokenized Response</h2>
+                        <h2>Clean LLM Response</h2>
                     </div>
                     <div class="card-body">
-                        <p class="outcome-desc">Original data restored locally after safe LLM inference.</p>
                         <div id="finalOutput" class="final-box shadow-green"></div>
-                        <div class="security-stamp">
-                            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2"
-                                fill="none" style="margin-right: 8px;">
-                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-                            </svg>
-                            Privacy Verified & Restored
+                        <div class="security-stamp" style="margin-top: 15px;">
+                            <span class="middleware-badge">🛡 Processed via SecureAI Middleware</span>
                         </div>
                     </div>
                 </div>
             </div>
+        </div>
+
+        <!-- NEW: Privacy Execution Monitor Section -->
+        <div class="monitor-wrapper fade-in">
+            <section id="monitorSection" class="workflow-card glass monitor-card hidden-step">
+                <div class="monitor-header">
+                    <div class="monitor-title-group">
+                        <div class="pulse-icon"></div>
+                        <h2>Privacy Execution Monitor</h2>
+                    </div>
+                    <span class="audit-badge">INTERNAL AUDIT ONLY</span>
+                </div>
+
+                <div class="monitor-timeline">
+                    <div class="timeline-step" id="step-extract">EXTRACT</div>
+                    <div class="timeline-step" id="step-analyze">ANALYZE</div>
+                    <div class="timeline-step" id="step-decide">DECIDE</div>
+                    <div class="timeline-step" id="step-mask">MASK</div>
+                    <div class="timeline-step" id="step-output">OUTPUT</div>
+                </div>
+
+                <div class="monitor-grid">
+                    <!-- Column 1 -->
+                    <div class="monitor-panel">
+                        <h3>1. Extraction Audit (OCR Results)</h3>
+                        <div id="extractionAudit" class="audit-content">
+                            <div class="audit-row">
+                                <span class="audit-label">Faces Detected:</span>
+                                <span id="auditFaces" class="audit-val">0</span>
+                            </div>
+                            <div class="audit-row">
+                                <span class="audit-label">Text Regions Analyzed:</span>
+                                <span id="auditTextRegions" class="audit-val">0</span>
+                            </div>
+                            <div class="audit-row">
+                                <span class="audit-label">Sensitive Masks Applied:</span>
+                                <span id="auditMasks" class="audit-val">0</span>
+                            </div>
+                            <div class="audit-row">
+                                <span class="audit-label">Barcodes/QRs Masked:</span>
+                                <span id="auditBarcodes" class="audit-val">0</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Column 2 (Spans most width) -->
+                    <div class="monitor-panel table-panel">
+                        <h3>2. Masking Decision Logic</h3>
+                        <div class="table-container">
+                            <table class="audit-table">
+                                <thead>
+                                    <tr>
+                                        <th>CONTENT</th>
+                                        <th>TOKEN</th>
+                                        <th>DECISION</th>
+                                        <th>REASON / RULE</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="decisionTableBody">
+                                    <tr class="empty-row">
+                                        <td colspan="4">No data analyzed yet...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Column 3 -->
+                    <div class="monitor-panel">
+                        <h3>3. Risk Score Breakdown</h3>
+                        <div id="riskBreakdown" class="audit-content">
+                            <div class="audit-row">
+                                <span class="audit-label">Final Privacy Risk Score:</span>
+                                <span id="auditRiskScore" class="audit-val">0.0</span>
+                            </div>
+                            <div class="audit-row">
+                                <span class="audit-label">Safe to Forward:</span>
+                                <span id="auditSafe" class="safe-tag tag-yes">N/A</span>
+                            </div>
+                            <div class="audit-row">
+                                <span class="audit-label">Policy:</span>
+                                <span id="auditPolicy" class="audit-val">WAITING</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Column 4 (Spans width) -->
+                    <div class="monitor-panel log-panel">
+                        <h3>4. Data Flow Log (Internal)</h3>
+                        <div class="log-container">
+                            <p class="log-title">INTERNAL DATA FLOW:</p>
+                            <div id="dataFlowLog" class="log-box">
+                                <div class="log-entry">SYSTEM IDLE: Waiting for input...</div>
+                            </div>
+                            <div class="security-status-bar">
+                                <div class="lock-icon">
+                                    <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor"
+                                        stroke-width="2.5" fill="none">
+                                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                                        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                                    </svg>
+                                </div>
+                                SECURITY STATUS: <span id="encryptionStatus">Encrypted Tunnel Ready</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
         </div>
     </main>
 

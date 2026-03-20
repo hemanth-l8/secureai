@@ -17,74 +17,62 @@ class PrivacyFilter:
 
     def sanitize(self, text, ner_report):
         """
-        Replaces sensitive data with unique tokens and stores the mapping.
-        Returns: (sanitized_text, token_map)
+        Replaces sensitive data with unique tokens using character spans.
+        Returns: sanitized_text
         """
-        sanitized_text = text
         self.token_map = {} # Reset for new request
         self.counter = 0
         
-        # Helper to process entities
-        def process_entity(label, item):
-            # Check if we already tokenized this exact item to maintain consistency
+        entities = ner_report.get("entities", [])
+        
+        # Sort entities by start position in REVERSE order
+        # This allows us to replace text without invalidating the indices of subsequent spans
+        sorted_entities = sorted(entities, key=lambda x: x['start'], reverse=True)
+        
+        sanitized_text = text
+        
+        for ent in sorted_entities:
+            start = ent['start']
+            end = ent['end']
+            label = ent['label']
+            original_val = ent['text']
+            
+            # Check if we already tokenized this exact string content elsewhere in this request
+            # (Optional: some prefer different tokens for different locations, 
+            # but usually same string = same token for consistency)
             existing_token = None
-            for token, original in self.token_map.items():
-                if original == item:
+            for token, mapped_val in self.token_map.items():
+                if mapped_val == original_val:
                     existing_token = token
                     break
             
             if existing_token:
-                return existing_token
+                token = existing_token
+            else:
+                self.counter += 1
+                token = f"[{label}_{self.counter}]"
+                self.token_map[token] = original_val
             
-            # Create new token
-            token = self._generate_token(label)
-            self.token_map[token] = item
-            return token
-
-        # 1. Morph Structured Data (Regex Findings)
-        structured_data = ner_report.get("structured_data", {})
-        for label, items in structured_data.items():
-            for item in items:
-                # Replace with Token
-                token = process_entity(label, item)
-                sanitized_text = sanitized_text.replace(item, token)
-        
-        # 2. Morph Contextual Regex Data (Usernames)
-        contextual_regex_data = ner_report.get("contextual_regex_data", {})
-        for label, items in contextual_regex_data.items():
-            for item in items:
-                token = process_entity(label, item)
-                sanitized_text = sanitized_text.replace(item, token)
-
-        # 3. Morph Contextual Data (ML Findings)
-        contextual_data = ner_report.get("contextual_data", {})
-        for label, items in contextual_data.items():
-            for item in items:
-                token = process_entity(label, item)
-                sanitized_text = sanitized_text.replace(item, token)
+            # Replace using string slicing (Span-based)
+            sanitized_text = sanitized_text[:start] + token + sanitized_text[end:]
                 
         return sanitized_text
 
     def detokenize(self, text):
         """
-        Restores original data from tokens in the text.
-        Handles both bracketed [TOKEN_N] and stripped TOKEN_N formats.
+        Restores original data from tokens in the text using exact matches.
+        Usage: [LABEL_N] -> original_value
         """
         detokenized_text = text
         
         # Sort tokens by length (descending) to avoid partial replacement issues
+        # (Though with bracketed tokens, this is less critical)
         sorted_tokens = sorted(self.token_map.keys(), key=len, reverse=True)
         
         for token in sorted_tokens:
             original = self.token_map[token]
-            # 1. Replace exact bracketed match
+            # Replace only the exact bracketed match
             detokenized_text = detokenized_text.replace(token, original)
-            
-            # 2. Replace stripped match (e.g., USERNAME_1) with word boundaries
-            stripped_token = token.strip("[]")
-            # Only replace if it's not already replaced (brackets gone)
-            # Use regex for word boundaries to avoid replacing "USERNAME_10" when looking for "USERNAME_1"
-            detokenized_text = re.sub(rf'\b{re.escape(stripped_token)}\b', original, detokenized_text)
             
         return detokenized_text
 
